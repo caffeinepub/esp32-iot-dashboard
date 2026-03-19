@@ -16,8 +16,16 @@ import {
   Zap,
 } from "lucide-react";
 import { motion } from "motion/react";
-import type { Alert } from "../backend";
-import { SensorChart } from "../components/SensorChart";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import type { Alert, SensorData } from "../backend";
 import {
   useAllLatestReadings,
   useDashboardStats,
@@ -63,6 +71,38 @@ function StatCard({
   );
 }
 
+type SparklineProps = {
+  data: SensorData[];
+  dataKey: keyof Omit<SensorData, "timestamp">;
+  color: string;
+};
+
+function Sparkline({ data, dataKey, color }: SparklineProps) {
+  if (data.length < 2) return null;
+  const points = data.map((r) => ({ v: r[dataKey] as number }));
+  return (
+    <ResponsiveContainer width={80} height={36}>
+      <LineChart
+        data={points}
+        margin={{ top: 2, right: 2, bottom: 2, left: 2 }}
+      >
+        <Tooltip
+          contentStyle={{ display: "none" }}
+          wrapperStyle={{ display: "none" }}
+        />
+        <Line
+          type="monotone"
+          dataKey="v"
+          stroke={color}
+          strokeWidth={1.5}
+          dot={false}
+          isAnimationActive={false}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
 interface SensorCardProps {
   icon: React.ElementType;
   label: string;
@@ -71,6 +111,9 @@ interface SensorCardProps {
   colorClass: string;
   bgClass: string;
   borderClass: string;
+  sparklineColor: string;
+  sparklineKey: keyof Omit<SensorData, "timestamp">;
+  history: SensorData[];
 }
 
 function SensorCard({
@@ -81,26 +124,38 @@ function SensorCard({
   colorClass,
   bgClass,
   borderClass,
+  sparklineColor,
+  sparklineKey,
+  history,
 }: SensorCardProps) {
   return (
     <Card className={`bg-card border shadow-card ${borderClass}`}>
       <CardContent className="p-4">
-        <div className="flex items-center gap-3">
-          <div
-            className={`w-10 h-10 rounded-xl flex items-center justify-center ${bgClass}`}
-          >
-            <Icon className={`w-5 h-5 ${colorClass}`} />
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <div
+              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${bgClass}`}
+            >
+              <Icon className={`w-5 h-5 ${colorClass}`} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">{label}</p>
+              <p className={`text-xl font-bold ${colorClass}`}>
+                {value !== null ? value : "—"}
+                {value !== null && (
+                  <span className="text-xs font-normal ml-1 text-muted-foreground">
+                    {unit}
+                  </span>
+                )}
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="text-xs text-muted-foreground">{label}</p>
-            <p className={`text-xl font-bold ${colorClass}`}>
-              {value !== null ? value : "—"}
-              {value !== null && (
-                <span className="text-xs font-normal ml-1 text-muted-foreground">
-                  {unit}
-                </span>
-              )}
-            </p>
+          <div className="shrink-0">
+            <Sparkline
+              data={history}
+              dataKey={sparklineKey}
+              color={sparklineColor}
+            />
           </div>
         </div>
       </CardContent>
@@ -144,6 +199,102 @@ function AlertRow({ alert, index }: { alert: Alert; index: number }) {
   );
 }
 
+function MultiSensorChart({ data }: { data: SensorData[] }) {
+  const points = data.map((r) => ({
+    time: new Date(Number(r.timestamp) / 1_000_000).toLocaleTimeString(
+      "en-US",
+      { hour12: false },
+    ),
+    temperature: r.temperature,
+    heat: r.heat,
+    level: r.level,
+    flow: r.flow,
+    vibration: r.vibration,
+  }));
+
+  const tooltipStyle = {
+    backgroundColor: "oklch(0.22 0.04 240)",
+    border: "1px solid oklch(0.3 0.04 240)",
+    borderRadius: "8px",
+    color: "oklch(0.92 0.012 240)",
+    fontSize: "11px",
+  };
+
+  return (
+    <ResponsiveContainer width="100%" height={240}>
+      <LineChart
+        data={points}
+        margin={{ top: 4, right: 12, left: -16, bottom: 0 }}
+      >
+        <CartesianGrid
+          strokeDasharray="3 3"
+          stroke="oklch(0.3 0.04 240)"
+          vertical={false}
+        />
+        <XAxis
+          dataKey="time"
+          tick={{ fontSize: 9, fill: "oklch(0.55 0.025 240)" }}
+          tickLine={false}
+          axisLine={false}
+          interval="preserveStartEnd"
+        />
+        <YAxis
+          tick={{ fontSize: 9, fill: "oklch(0.55 0.025 240)" }}
+          tickLine={false}
+          axisLine={false}
+          width={36}
+        />
+        <Tooltip contentStyle={tooltipStyle} />
+        <Line
+          type="monotone"
+          dataKey="temperature"
+          stroke="#f97316"
+          strokeWidth={1.5}
+          dot={false}
+          isAnimationActive={false}
+          name="Temp °C"
+        />
+        <Line
+          type="monotone"
+          dataKey="heat"
+          stroke="#ef4444"
+          strokeWidth={1.5}
+          dot={false}
+          isAnimationActive={false}
+          name="Heat °C"
+        />
+        <Line
+          type="monotone"
+          dataKey="level"
+          stroke="#3b82f6"
+          strokeWidth={1.5}
+          dot={false}
+          isAnimationActive={false}
+          name="Level %"
+        />
+        <Line
+          type="monotone"
+          dataKey="flow"
+          stroke="#06b6d4"
+          strokeWidth={1.5}
+          dot={false}
+          isAnimationActive={false}
+          name="Flow L/min"
+        />
+        <Line
+          type="monotone"
+          dataKey="vibration"
+          stroke="#a855f7"
+          strokeWidth={1.5}
+          dot={false}
+          isAnimationActive={false}
+          name="Vib m/s²"
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
 export function DashboardPage() {
   const { data: stats, isLoading: statsLoading } = useDashboardStats();
   const { data: alerts = [] } = useRecentAlerts(5);
@@ -152,7 +303,6 @@ export function DashboardPage() {
   const firstDeviceId = devices[0]?.id ?? "";
   const { data: history = [] } = useDeviceHistory(firstDeviceId, 20);
 
-  // Compute averages from latest readings
   const validReadings = latestReadings
     .map(([, r]) => r)
     .filter((r): r is NonNullable<typeof r> => r !== null);
@@ -170,36 +320,48 @@ export function DashboardPage() {
       label: "Temperature",
       value: avg((r) => r.temperature),
       unit: "°C",
-      colorClass: "text-blue-400",
-      bgClass: "bg-blue-500/15",
-      borderClass: "border-blue-500/20",
+      colorClass: "text-orange-400",
+      bgClass: "bg-orange-500/15",
+      borderClass: "border-orange-500/20",
+      sparklineColor: "#f97316",
+      sparklineKey: "temperature",
+      history,
     },
     {
       icon: Flame,
       label: "Heat Index",
       value: avg((r) => r.heat),
       unit: "°C",
-      colorClass: "text-orange-400",
-      bgClass: "bg-orange-500/15",
-      borderClass: "border-orange-500/20",
+      colorClass: "text-red-400",
+      bgClass: "bg-red-500/15",
+      borderClass: "border-red-500/20",
+      sparklineColor: "#ef4444",
+      sparklineKey: "heat",
+      history,
     },
     {
       icon: Droplets,
-      label: "Level",
+      label: "Water Level",
       value: avg((r) => r.level),
       unit: "%",
-      colorClass: "text-cyan-400",
-      bgClass: "bg-cyan-500/15",
-      borderClass: "border-cyan-500/20",
+      colorClass: "text-blue-400",
+      bgClass: "bg-blue-500/15",
+      borderClass: "border-blue-500/20",
+      sparklineColor: "#3b82f6",
+      sparklineKey: "level",
+      history,
     },
     {
       icon: Waves,
       label: "Flow Rate",
       value: avg((r) => r.flow),
       unit: "L/min",
-      colorClass: "text-green-400",
-      bgClass: "bg-green-500/15",
-      borderClass: "border-green-500/20",
+      colorClass: "text-cyan-400",
+      bgClass: "bg-cyan-500/15",
+      borderClass: "border-cyan-500/20",
+      sparklineColor: "#06b6d4",
+      sparklineKey: "flow",
+      history,
     },
     {
       icon: Zap,
@@ -209,6 +371,9 @@ export function DashboardPage() {
       colorClass: "text-purple-400",
       bgClass: "bg-purple-500/15",
       borderClass: "border-purple-500/20",
+      sparklineColor: "#a855f7",
+      sparklineKey: "vibration",
+      history,
     },
   ];
 
@@ -273,12 +438,12 @@ export function DashboardPage() {
         )}
       </div>
 
-      {/* Sensor Overview Cards */}
+      {/* Sensor Overview Cards with Sparklines */}
       <div>
         <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
           Sensor Overview — Avg across all devices
         </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
           {sensorCards.map((sc) => (
             <motion.div
               key={sc.label}
@@ -298,7 +463,7 @@ export function DashboardPage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-base font-semibold flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-primary" />
-              Real-Time Sensor Chart
+              Multi-Sensor Trend
               {devices[0] && (
                 <span className="text-xs text-muted-foreground font-normal ml-1">
                   — {devices[0].name}
@@ -315,7 +480,7 @@ export function DashboardPage() {
                 No sensor data yet.
               </div>
             ) : (
-              <SensorChart data={history} />
+              <MultiSensorChart data={history} />
             )}
           </CardContent>
         </Card>

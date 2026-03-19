@@ -1,34 +1,26 @@
-# ESP32 IoT Dashboard - Multi-Sensor Update
+# ESP32 IoT Dashboard
 
 ## Current State
-Basic ESP32 dashboard with temperature, humidity, voltage sensors. Single sensor data model.
+Full-stack app with Motoko backend storing sensor data (temperature, heat, level, flow, vibration). Frontend has Dashboard, Devices, LiveData, Alerts, Connect pages. No real-time charts exist yet.
 
 ## Requested Changes (Diff)
 
 ### Add
-- Full multi-sensor support: Temperature, Heat, Level, Flow, Vibration sensors
-- Each sensor type has its own unit and display (°C, °F, %, L/min, m/s², etc.)
-- Per-sensor real-time chart on device detail page
-- Sensor-specific alert thresholds displayed
-- ESP32 Arduino code snippet shown in app so user can copy-paste to board
-- Auto-refresh every 5 seconds for real-time monitoring
-- Sensor cards on dashboard showing latest value per sensor type per device
+- Real-time line charts for all 5 sensors (temperature, heat index, water level, flow rate, vibration) on LiveDataPage
+- Auto-poll every 5 seconds to fetch latest readings and update charts
+- Chart shows last 20 readings with timestamp on X-axis
+- Individual colored cards per sensor with current value + trend chart
+- Device selector to view specific device charts
 
 ### Modify
-- Backend: extend SensorData to include heat, level, flow, vibration fields
-- ingestSensorData to accept all 5 sensor values
-- Frontend dashboard to show all sensor types
-- Charts to show all sensor types with color-coded lines
+- LiveDataPage: replace any placeholder with full charting UI using recharts
+- DashboardPage: show live current values with small sparkline charts
 
 ### Remove
-- humidity/voltage fields replaced by heat, level, flow, vibration (keep temperature)
+- Nothing
 
 ## Implementation Plan
-1. Update Motoko backend with new SensorData structure
-2. Regenerate frontend bindings
-3. Update frontend:
-   - Dashboard: sensor overview cards per type
-   - Live Data table: columns for all 5 sensors
-   - Device detail: multi-line chart for all sensors
-   - New "Connect" page: ESP32 Arduino code snippet with device ID
-   - Auto-refresh polling every 5 seconds
+1. Add recharts to frontend dependencies
+2. Rewrite LiveDataPage with per-sensor LineCharts, auto-polling every 5s
+3. Update DashboardPage sensor cards to show sparklines
+4. Wire to getHistoricalReadings and getLatestReading backend APIs

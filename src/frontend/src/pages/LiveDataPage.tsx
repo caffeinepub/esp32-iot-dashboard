@@ -8,16 +8,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   Activity,
-  Clock,
   Droplets,
   Flame,
   Loader2,
@@ -25,71 +16,284 @@ import {
   Waves,
   Zap,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import type { SensorData } from "../backend";
+import { motion } from "motion/react";
+import { useState } from "react";
 import {
-  useAllLatestReadings,
-  useDeviceHistory,
-  useDevices,
-} from "../hooks/useQueries";
-
-const REFRESH_INTERVAL = 5;
+  Area,
+  AreaChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import type { SensorData } from "../backend";
+import { useDeviceHistory, useDevices } from "../hooks/useQueries";
 
 function formatTime(ts: bigint): string {
   const ms = Number(ts) / 1_000_000;
   if (ms === 0) return "—";
-  return new Date(ms).toLocaleString();
+  return new Date(ms).toLocaleTimeString("en-US", { hour12: false });
 }
 
-function isOutOfRange(field: keyof SensorData, val: number): boolean {
-  const ranges: Partial<Record<keyof SensorData, [number, number]>> = {
-    temperature: [20, 35],
-    heat: [25, 45],
-    level: [30, 90],
-    flow: [5, 25],
-    vibration: [0.1, 2.5],
+type ChartPoint = { time: string; value: number };
+
+function toChartData(
+  history: SensorData[],
+  key: keyof Omit<SensorData, "timestamp">,
+): ChartPoint[] {
+  return history.map((r) => ({
+    time: formatTime(r.timestamp),
+    value: r[key] as number,
+  }));
+}
+
+interface SensorChartCardProps {
+  label: string;
+  unit: string;
+  icon: React.ElementType;
+  color: string;
+  data: ChartPoint[];
+  chartType: "line" | "area";
+  currentValue: number | null;
+  decimals?: number;
+  isLoading: boolean;
+}
+
+function SensorChartCard({
+  label,
+  unit,
+  icon: Icon,
+  color,
+  data,
+  chartType,
+  currentValue,
+  decimals = 1,
+  isLoading,
+}: SensorChartCardProps) {
+  const tooltipStyle = {
+    backgroundColor: "oklch(0.22 0.04 240)",
+    border: `1px solid ${color}40`,
+    borderRadius: "8px",
+    color: "oklch(0.92 0.012 240)",
+    fontSize: "12px",
   };
-  const r = ranges[field];
-  if (!r) return false;
-  return val < r[0] || val > r[1];
-}
 
-function valClass(field: keyof SensorData, val: number) {
-  return isOutOfRange(field, val)
-    ? "text-destructive font-bold"
-    : "text-foreground";
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+    >
+      <Card
+        className="bg-card border shadow-lg overflow-hidden"
+        style={{ borderColor: `${color}30` }}
+      >
+        <CardHeader className="pb-2 pt-4 px-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div
+                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                style={{ backgroundColor: `${color}20` }}
+              >
+                <Icon className="w-4 h-4" style={{ color }} />
+              </div>
+              <CardTitle className="text-sm font-semibold text-muted-foreground">
+                {label}
+              </CardTitle>
+            </div>
+            {currentValue !== null && (
+              <div className="text-right">
+                <span
+                  className="text-2xl font-bold tabular-nums"
+                  style={{ color }}
+                >
+                  {currentValue.toFixed(decimals)}
+                </span>
+                <span className="text-xs text-muted-foreground ml-1">
+                  {unit}
+                </span>
+              </div>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="px-1 pb-3">
+          {isLoading ? (
+            <div className="h-36 flex items-center justify-center">
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : data.length === 0 ? (
+            <div
+              data-ocid="livedata.empty_state"
+              className="h-36 flex items-center justify-center text-muted-foreground text-xs"
+            >
+              Waiting for data...
+            </div>
+          ) : chartType === "area" ? (
+            <ResponsiveContainer width="100%" height={148}>
+              <AreaChart
+                data={data}
+                margin={{ top: 4, right: 8, left: -20, bottom: 0 }}
+              >
+                <defs>
+                  <linearGradient
+                    id={`grad-${label}`}
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop offset="5%" stopColor={color} stopOpacity={0.35} />
+                    <stop offset="95%" stopColor={color} stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="oklch(0.3 0.04 240)"
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="time"
+                  tick={{ fontSize: 9, fill: "oklch(0.55 0.025 240)" }}
+                  tickLine={false}
+                  axisLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  tick={{ fontSize: 9, fill: "oklch(0.55 0.025 240)" }}
+                  tickLine={false}
+                  axisLine={false}
+                  width={38}
+                />
+                <Tooltip
+                  contentStyle={tooltipStyle}
+                  formatter={(v: number) => [
+                    `${v.toFixed(decimals)} ${unit}`,
+                    label,
+                  ]}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="value"
+                  stroke={color}
+                  strokeWidth={2}
+                  fill={`url(#grad-${label})`}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <ResponsiveContainer width="100%" height={148}>
+              <LineChart
+                data={data}
+                margin={{ top: 4, right: 8, left: -20, bottom: 0 }}
+              >
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="oklch(0.3 0.04 240)"
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="time"
+                  tick={{ fontSize: 9, fill: "oklch(0.55 0.025 240)" }}
+                  tickLine={false}
+                  axisLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  tick={{ fontSize: 9, fill: "oklch(0.55 0.025 240)" }}
+                  tickLine={false}
+                  axisLine={false}
+                  width={38}
+                />
+                <Tooltip
+                  contentStyle={tooltipStyle}
+                  formatter={(v: number) => [
+                    `${v.toFixed(decimals)} ${unit}`,
+                    label,
+                  ]}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  stroke={color}
+                  strokeWidth={2}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
 }
 
 export function LiveDataPage() {
   const { data: devices = [] } = useDevices();
-  const { data: allLatest = [], isLoading: latestLoading } =
-    useAllLatestReadings();
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string>("all");
-  const [countdown, setCountdown] = useState(REFRESH_INTERVAL);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
 
-  // Countdown timer
-  useEffect(() => {
-    intervalRef.current = setInterval(() => {
-      setCountdown((c) => {
-        if (c <= 1) return REFRESH_INTERVAL;
-        return c - 1;
-      });
-    }, 1000);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, []);
+  const effectiveDeviceId =
+    selectedDeviceId || (devices.length > 0 ? devices[0].id : "");
 
-  const targetDeviceId = selectedDeviceId === "all" ? "" : selectedDeviceId;
-
-  const { data: deviceHistory = [], isLoading: histLoading } = useDeviceHistory(
-    targetDeviceId,
-    50,
+  const { data: history = [], isLoading } = useDeviceHistory(
+    effectiveDeviceId,
+    20,
   );
 
-  // For "all" view use allLatestReadings; for specific device use history
-  const showAll = selectedDeviceId === "all";
+  const latest = history[history.length - 1] ?? null;
+
+  const sensors = [
+    {
+      label: "Temperature",
+      unit: "°C",
+      icon: Thermometer,
+      color: "#f97316",
+      key: "temperature" as const,
+      chartType: "line" as const,
+      decimals: 1,
+    },
+    {
+      label: "Heat Index",
+      unit: "°C",
+      icon: Flame,
+      color: "#ef4444",
+      key: "heat" as const,
+      chartType: "line" as const,
+      decimals: 1,
+    },
+    {
+      label: "Water Level",
+      unit: "%",
+      icon: Droplets,
+      color: "#3b82f6",
+      key: "level" as const,
+      chartType: "area" as const,
+      decimals: 1,
+    },
+    {
+      label: "Flow Rate",
+      unit: "L/min",
+      icon: Waves,
+      color: "#06b6d4",
+      key: "flow" as const,
+      chartType: "line" as const,
+      decimals: 1,
+    },
+    {
+      label: "Vibration",
+      unit: "m/s²",
+      icon: Zap,
+      color: "#a855f7",
+      key: "vibration" as const,
+      chartType: "line" as const,
+      decimals: 2,
+    },
+  ];
 
   return (
     <div
@@ -100,14 +304,14 @@ export function LiveDataPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground">
-            Live Sensor Data
+            Live Sensor Charts
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Real-time readings from all ESP32 devices
+            Real-time monitoring — auto-refreshes every 5 seconds
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
+          <Select value={effectiveDeviceId} onValueChange={setSelectedDeviceId}>
             <SelectTrigger
               data-ocid="livedata.select"
               className="w-52 bg-card border-border"
@@ -115,7 +319,6 @@ export function LiveDataPage() {
               <SelectValue placeholder="Select device" />
             </SelectTrigger>
             <SelectContent className="bg-card border-border">
-              <SelectItem value="all">All Devices (latest)</SelectItem>
               {devices.map((d) => (
                 <SelectItem key={d.id} value={d.id}>
                   {d.name}
@@ -123,264 +326,82 @@ export function LiveDataPage() {
               ))}
             </SelectContent>
           </Select>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20">
-            <Clock className="w-3.5 h-3.5 text-primary" />
-            <span className="text-xs text-primary font-mono font-bold">
-              Refresh in {countdown}s
+
+          <Badge
+            data-ocid="livedata.toggle"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-success/10 border border-success/30 text-success text-xs rounded-full"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
             </span>
-          </div>
+            Live
+          </Badge>
         </div>
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          {
-            icon: Thermometer,
-            label: "Temperature",
-            color: "text-blue-400 bg-blue-500/10",
-          },
-          {
-            icon: Flame,
-            label: "Heat Index",
-            color: "text-orange-400 bg-orange-500/10",
-          },
-          {
-            icon: Droplets,
-            label: "Level",
-            color: "text-cyan-400 bg-cyan-500/10",
-          },
-          {
-            icon: Waves,
-            label: "Flow Rate",
-            color: "text-green-400 bg-green-500/10",
-          },
-        ].map(({ icon: Icon, label, color }) => (
-          <div
-            key={label}
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl ${color} border border-current/10`}
-          >
-            <Icon className="w-4 h-4" />
-            <span className="text-xs font-medium">{label}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Main Table */}
-      <Card className="bg-card border-border shadow-card">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base font-semibold flex items-center gap-2">
-            <Activity className="w-4 h-4 text-primary" />
-            {showAll
-              ? "Latest Reading per Device"
-              : `${devices.find((d) => d.id === selectedDeviceId)?.name ?? selectedDeviceId} — History`}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {latestLoading || histLoading ? (
+      {/* Summary strip */}
+      {latest && (
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          {sensors.map((s) => (
             <div
-              data-ocid="livedata.loading_state"
-              className="p-8 text-center text-muted-foreground text-sm"
+              key={s.key}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-card border"
+              style={{ borderColor: `${s.color}30` }}
             >
-              <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
-              Loading sensor data...
+              <s.icon
+                className="w-3.5 h-3.5 shrink-0"
+                style={{ color: s.color }}
+              />
+              <div className="min-w-0">
+                <div className="text-[10px] text-muted-foreground truncate">
+                  {s.label}
+                </div>
+                <div
+                  className="text-sm font-bold tabular-nums"
+                  style={{ color: s.color }}
+                >
+                  {(latest[s.key] as number).toFixed(s.decimals)}
+                  <span className="text-[10px] font-normal text-muted-foreground ml-0.5">
+                    {s.unit}
+                  </span>
+                </div>
+              </div>
             </div>
-          ) : (
-            <div className="overflow-auto">
-              <Table data-ocid="livedata.table">
-                <TableHeader>
-                  <TableRow className="border-border hover:bg-transparent">
-                    <TableHead className="text-muted-foreground text-xs">
-                      Device
-                    </TableHead>
-                    <TableHead className="text-muted-foreground text-xs">
-                      <Thermometer className="inline w-3 h-3 mr-1 text-blue-400" />
-                      Temp (°C)
-                    </TableHead>
-                    <TableHead className="text-muted-foreground text-xs">
-                      <Flame className="inline w-3 h-3 mr-1 text-orange-400" />
-                      Heat (°C)
-                    </TableHead>
-                    <TableHead className="text-muted-foreground text-xs">
-                      <Droplets className="inline w-3 h-3 mr-1 text-cyan-400" />
-                      Level (%)
-                    </TableHead>
-                    <TableHead className="text-muted-foreground text-xs">
-                      <Waves className="inline w-3 h-3 mr-1 text-green-400" />
-                      Flow (L/min)
-                    </TableHead>
-                    <TableHead className="text-muted-foreground text-xs">
-                      <Zap className="inline w-3 h-3 mr-1 text-purple-400" />
-                      Vib (m/s²)
-                    </TableHead>
-                    <TableHead className="text-muted-foreground text-xs">
-                      <Clock className="inline w-3 h-3 mr-1" />
-                      Time
-                    </TableHead>
-                    <TableHead className="text-muted-foreground text-xs">
-                      Status
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {showAll ? (
-                    allLatest.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={8}>
-                          <div
-                            data-ocid="livedata.empty_state"
-                            className="p-8 text-center text-muted-foreground text-sm"
-                          >
-                            No readings yet.
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      allLatest.map(([deviceId, reading], i) => {
-                        if (!reading) return null;
-                        const deviceName =
-                          devices.find((d) => d.id === deviceId)?.name ??
-                          deviceId;
-                        const anyOor =
-                          isOutOfRange("temperature", reading.temperature) ||
-                          isOutOfRange("heat", reading.heat) ||
-                          isOutOfRange("level", reading.level) ||
-                          isOutOfRange("flow", reading.flow) ||
-                          isOutOfRange("vibration", reading.vibration);
-                        return (
-                          <TableRow
-                            key={deviceId}
-                            data-ocid={`livedata.item.${i + 1}`}
-                            className="border-border hover:bg-accent/30 transition-colors"
-                          >
-                            <TableCell className="text-sm font-medium text-foreground">
-                              {deviceName}
-                            </TableCell>
-                            <TableCell
-                              className={`text-sm font-mono ${valClass("temperature", reading.temperature)}`}
-                            >
-                              {reading.temperature.toFixed(1)}
-                            </TableCell>
-                            <TableCell
-                              className={`text-sm font-mono ${valClass("heat", reading.heat)}`}
-                            >
-                              {reading.heat.toFixed(1)}
-                            </TableCell>
-                            <TableCell
-                              className={`text-sm font-mono ${valClass("level", reading.level)}`}
-                            >
-                              {reading.level.toFixed(1)}
-                            </TableCell>
-                            <TableCell
-                              className={`text-sm font-mono ${valClass("flow", reading.flow)}`}
-                            >
-                              {reading.flow.toFixed(1)}
-                            </TableCell>
-                            <TableCell
-                              className={`text-sm font-mono ${valClass("vibration", reading.vibration)}`}
-                            >
-                              {reading.vibration.toFixed(2)}
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              {formatTime(reading.timestamp)}
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant="outline"
-                                className={
-                                  anyOor
-                                    ? "text-destructive border-destructive/30 bg-destructive/10 text-xs"
-                                    : "text-success border-success/30 bg-success/10 text-xs"
-                                }
-                              >
-                                {anyOor ? "Warning" : "Normal"}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })
-                    )
-                  ) : deviceHistory.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8}>
-                        <div
-                          data-ocid="livedata.empty_state"
-                          className="p-8 text-center text-muted-foreground text-sm"
-                        >
-                          No history for this device.
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    deviceHistory
-                      .slice()
-                      .reverse()
-                      .map((reading, i) => {
-                        const anyOor =
-                          isOutOfRange("temperature", reading.temperature) ||
-                          isOutOfRange("heat", reading.heat) ||
-                          isOutOfRange("level", reading.level) ||
-                          isOutOfRange("flow", reading.flow) ||
-                          isOutOfRange("vibration", reading.vibration);
-                        return (
-                          <TableRow
-                            key={String(reading.timestamp)}
-                            data-ocid={`livedata.item.${i + 1}`}
-                            className="border-border hover:bg-accent/30 transition-colors"
-                          >
-                            <TableCell className="text-xs text-muted-foreground">
-                              #{i + 1}
-                            </TableCell>
-                            <TableCell
-                              className={`text-sm font-mono ${valClass("temperature", reading.temperature)}`}
-                            >
-                              {reading.temperature.toFixed(1)}
-                            </TableCell>
-                            <TableCell
-                              className={`text-sm font-mono ${valClass("heat", reading.heat)}`}
-                            >
-                              {reading.heat.toFixed(1)}
-                            </TableCell>
-                            <TableCell
-                              className={`text-sm font-mono ${valClass("level", reading.level)}`}
-                            >
-                              {reading.level.toFixed(1)}
-                            </TableCell>
-                            <TableCell
-                              className={`text-sm font-mono ${valClass("flow", reading.flow)}`}
-                            >
-                              {reading.flow.toFixed(1)}
-                            </TableCell>
-                            <TableCell
-                              className={`text-sm font-mono ${valClass("vibration", reading.vibration)}`}
-                            >
-                              {reading.vibration.toFixed(2)}
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              {formatTime(reading.timestamp)}
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant="outline"
-                                className={
-                                  anyOor
-                                    ? "text-destructive border-destructive/30 bg-destructive/10 text-xs"
-                                    : "text-success border-success/30 bg-success/10 text-xs"
-                                }
-                              >
-                                {anyOor ? "Warning" : "Normal"}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Chart Grid */}
+      {devices.length === 0 && !isLoading ? (
+        <div
+          data-ocid="livedata.empty_state"
+          className="flex flex-col items-center justify-center py-24 text-muted-foreground gap-3"
+        >
+          <Activity className="w-10 h-10 opacity-30" />
+          <p className="text-sm">No devices registered yet.</p>
+          <p className="text-xs opacity-60">
+            Register a device on the Devices page to start monitoring.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {sensors.map((s) => (
+            <SensorChartCard
+              key={s.key}
+              label={s.label}
+              unit={s.unit}
+              icon={s.icon}
+              color={s.color}
+              data={toChartData(history, s.key)}
+              chartType={s.chartType}
+              currentValue={latest ? (latest[s.key] as number) : null}
+              decimals={s.decimals}
+              isLoading={isLoading}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
